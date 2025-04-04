@@ -1,1 +1,0 @@
-Scenario_ID,Dataset,Doctor_LLM,Patient_LLM,Urgent,Dialogue_Turns,Model_Diagnosis,Correct_Diagnosis,Correctness,Doctor_Thinking_Trace

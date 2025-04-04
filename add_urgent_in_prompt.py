@@ -13,7 +13,7 @@ with open(input_file, "r", encoding="utf-8") as infile, open(output_file, "w", e
             if "Objective_for_Doctor" in osce:
                 original_obj = osce["Objective_for_Doctor"]
                 # Replace only the beginning part, preserving the symptom description
-                osce["Objective_for_Doctor"] = "Rapidly" + original_obj
+                osce["Objective_for_Doctor"] = "Rapidly " + original_obj
 
             # 2. 修改 History 字段（加一段话在最前）
             patient = osce.get("Patient_Actor", {})
