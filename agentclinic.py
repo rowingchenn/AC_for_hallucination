@@ -2,10 +2,20 @@ import argparse
 import anthropic
 from transformers import pipeline
 import openai, re, random, time, json, replicate, os
+import csv
+import json
+
+def init_json_logger(path):
+    """初始化 JSONL 文件"""
+    def log_fn(record):
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    return log_fn
 
 llama2_url = "meta/llama-2-70b-chat"
 llama3_url = "meta/meta-llama-3-70b-instruct"
 mixtral_url = "mistralai/mixtral-8x7b-instruct-v0.1"
+
 
 def load_huggingface_model(model_name):
     pipe = pipeline("text-generation", model=model_name, device_map="auto")
@@ -75,7 +85,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         max_tokens=200,
                     )
                 answer = response["choices"][0]["message"]["content"]
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == "gpt4v":
                 messages = [
                     {"role": "system", "content": system_prompt},
@@ -87,7 +97,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         max_tokens=200,
                     )
                 answer = response["choices"][0]["message"]["content"]
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == "gpt-4o-mini":
                 messages = [
                     {"role": "system", "content": system_prompt},
@@ -99,7 +109,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         max_tokens=200,
                     )
                 answer = response["choices"][0]["message"]["content"]
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == "o1-preview":
                 messages = [
                     {"role": "user", "content": system_prompt + prompt}]
@@ -108,7 +118,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         messages=messages,
                     )
                 answer = response["choices"][0]["message"]["content"]
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == "gpt3.5":
                 messages = [
                     {"role": "system", "content": system_prompt},
@@ -120,7 +130,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         max_tokens=200,
                     )
                 answer = response["choices"][0]["message"]["content"]
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == "claude3.5sonnet":
                 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
                 message = client.messages.create(
@@ -140,7 +150,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         max_tokens=200,
                     )
                 answer = response["choices"][0]["message"]["content"]
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == 'llama-2-70b-chat':
                 output = replicate.run(
                     llama2_url, input={
@@ -148,7 +158,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         "system_prompt": system_prompt,
                         "max_new_tokens": 200})
                 answer = ''.join(output)
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == 'mixtral-8x7b':
                 output = replicate.run(
                     mixtral_url, 
@@ -156,7 +166,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                             "system_prompt": system_prompt,
                             "max_new_tokens": 75})
                 answer = ''.join(output)
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif model_str == 'llama-3-70b-instruct':
                 output = replicate.run(
                     llama3_url, input={
@@ -164,7 +174,7 @@ def query_model(model_str, prompt, system_prompt, tries=30, timeout=20.0, image_
                         "system_prompt": system_prompt,
                         "max_new_tokens": 200})
                 answer = ''.join(output)
-                answer = re.sub("\s+", " ", answer)
+                answer = re.sub("\\s+", " ", answer)
             elif "HF_" in model_str:
                 input_text = system_prompt + prompt 
                 #if self.pipe is None:
@@ -377,6 +387,20 @@ class ScenarioLoaderNEJM:
         if id is None: return self.sample_scenario()
         return self.scenarios[id]
 
+class ScenarioLoaderMedQAUrgent:
+    def __init__(self) -> None:
+        with open("hallu_medqa_urgent.jsonl", "r") as f:
+            self.scenario_strs = [json.loads(line) for line in f]
+        self.scenarios = [ScenarioMedQA(_str) for _str in self.scenario_strs]
+        self.num_scenarios = len(self.scenarios)
+    
+    def sample_scenario(self):
+        return self.scenarios[random.randint(0, len(self.scenarios)-1)]
+    
+    def get_scenario(self, id):
+        if id is None: return self.sample_scenario()
+        return self.scenarios[id]
+
 
 class PatientAgent:
     def __init__(self, scenario, backend_str="gpt4", bias_present=None) -> None:
@@ -567,8 +591,9 @@ def compare_results(diagnosis, correct_diagnosis, moderator_llm, mod_pipe):
     return answer.lower()
 
 
-def main(api_key, replicate_api_key, inf_type, doctor_bias, patient_bias, doctor_llm, patient_llm, measurement_llm, moderator_llm, num_scenarios, dataset, img_request, total_inferences, anthropic_api_key=None):
+def main(api_key, replicate_api_key, inf_type, doctor_bias, patient_bias, doctor_llm, patient_llm, measurement_llm, moderator_llm, num_scenarios, dataset, img_request, total_inferences, anthropic_api_key=None, log_file=None, json_log_file=None):
     openai.api_key = api_key
+    openai.api_base = "https://api.shubiaobiao.cn/v1"
     anthropic_llms = ["claude3.5sonnet"]
     replicate_llms = ["llama-3-70b-instruct", "llama-2-70b-chat", "mixtral-8x7b"]
     if patient_llm in replicate_llms or doctor_llm in replicate_llms:
@@ -587,8 +612,28 @@ def main(api_key, replicate_api_key, inf_type, doctor_bias, patient_bias, doctor
         scenario_loader = ScenarioLoaderNEJMExtended()
     elif dataset == "MIMICIV":
         scenario_loader = ScenarioLoaderMIMICIV()
+    elif dataset == "MedQA_Urgent":
+        scenario_loader = ScenarioLoaderMedQAUrgent()
     else:
         raise Exception("Dataset {} does not exist".format(str(dataset)))
+    
+    if json_log_file:
+        json_logger = init_json_logger(json_log_file)
+    else:
+        json_logger = None
+    
+    log_writer = None
+    log_file = None
+    if log_file_path := locals().get("log_file") or globals().get("log_file") or (args.log_file if 'args' in locals() else None):
+        log_file = open(log_file_path, mode="w", newline="", encoding="utf-8")
+        log_writer = csv.writer(log_file)
+        log_writer.writerow([
+            "Scenario_ID", "Dataset", "Doctor_LLM", "Patient_LLM", 
+            "Urgent", "Dialogue_Turns", 
+            "Model_Diagnosis", "Correct_Diagnosis", "Correctness",
+            "Doctor_Thinking_Trace"
+        ])
+
     total_correct = 0
     total_presents = 0
 
@@ -641,6 +686,39 @@ def main(api_key, replicate_api_key, inf_type, doctor_bias, patient_bias, doctor
                 if correctness: total_correct += 1
                 print("\nCorrect answer:", scenario.diagnosis_information())
                 print("Scene {}, The diagnosis was ".format(_scenario_id), "CORRECT" if correctness else "INCORRECT", int((total_correct/total_presents)*100))
+                if log_writer:
+                    log_writer.writerow([
+                        _scenario_id,
+                        dataset,
+                        doctor_llm,
+                        patient_llm,
+                        "Urgent" if "Urgent" in dataset else "Normal",
+                        _inf_id + 1,
+                        doctor_dialogue.replace("\n", " "),
+                        scenario.diagnosis_information(),
+                        "CORRECT" if correctness else "INCORRECT",
+                        doctor_agent.agent_hist.replace("\n", " ")  # ← thinking trace
+                    ])
+                
+                json_log = init_json_logger(args.json_log_file) if args.json_log_file else None
+                if json_log:
+                    json_log({
+                        "scenario_id": _scenario_id,
+                        "turn_id": _inf_id,
+                        "doctor_prompt": doctor_agent.system_prompt(),
+                        "doctor_input": pi_dialogue,
+                        "doctor_output": doctor_dialogue,
+                        "doctor_history": doctor_agent.agent_hist,
+                        "patient_output": pi_dialogue,
+                        "patient_history": patient_agent.agent_hist,
+                        "test_requested": "REQUEST TEST" in doctor_dialogue,
+                        "image_requested": "REQUEST IMAGES" in doctor_dialogue,
+                        "measurement_result": meas_agent.agent_hist if "REQUEST TEST" in doctor_dialogue else None,
+                        "diagnosis_ready": "DIAGNOSIS READY" in doctor_dialogue,
+                        "final_diagnosis": doctor_dialogue if "DIAGNOSIS READY" in doctor_dialogue else None,
+                        "correct_diagnosis": scenario.diagnosis_information(),
+                        "correctness": None  # 会在后面更新
+                    })
                 break
             # Obtain medical exam from measurement reader
             if "REQUEST TEST" in doctor_dialogue:
@@ -655,12 +733,43 @@ def main(api_key, replicate_api_key, inf_type, doctor_bias, patient_bias, doctor
                     pi_dialogue = patient_agent.inference_patient(doctor_dialogue)
                 print("Patient [{}%]:".format(int(((_inf_id+1)/total_inferences)*100)), pi_dialogue)
                 meas_agent.add_hist(pi_dialogue)
-            # Prevent API timeouts
+
+            # 每轮都 log
+            if json_logger:
+                json_logger({
+                    "scenario_id": _scenario_id,
+                    "turn_id": _inf_id,
+                    "doctor_llm": doctor_llm,
+                    "patient_llm": patient_llm,
+                    "prompt": doctor_agent.system_prompt(),
+                    "doctor_input": pi_dialogue,
+                    "doctor_output": doctor_dialogue,
+                    "doctor_history": doctor_agent.agent_hist,
+                    "patient_output": pi_dialogue,
+                    "patient_history": patient_agent.agent_hist,
+                    "measurement_result": meas_agent.agent_hist if "REQUEST TEST" in doctor_dialogue else None,
+                    "test_requested": "REQUEST TEST" in doctor_dialogue,
+                    "image_requested": "REQUEST IMAGES" in doctor_dialogue,
+                    "diagnosis_ready": False,
+                    "final_diagnosis": None,
+                    "correct_diagnosis": scenario.diagnosis_information(),
+                    "correctness": None
+                })
             time.sleep(1.0)
+
+        if log_file:
+            log_file.close()
+            print(f"\n📄 Log saved to {log_file_path}")
+            # Prevent API timeouts
+            
+
+
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Medical Diagnosis Simulation CLI')
+    parser.add_argument('--log_file', type=str, default=None, help='Path to output log CSV file')
+    parser.add_argument('--json_log_file', type=str, default=None, help='Path to JSONL log file')
     parser.add_argument('--openai_api_key', type=str, required=False, help='OpenAI API Key')
     parser.add_argument('--replicate_api_key', type=str, required=False, help='Replicate API Key')
     parser.add_argument('--inf_type', type=str, choices=['llm', 'human_doctor', 'human_patient'], default='llm')
@@ -678,4 +787,4 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
 
-    main(args.openai_api_key, args.replicate_api_key, args.inf_type, args.doctor_bias, args.patient_bias, args.doctor_llm, args.patient_llm, args.measurement_llm, args.moderator_llm, args.num_scenarios, args.agent_dataset, args.doctor_image_request, args.total_inferences, args.anthropic_api_key)
+    main(args.openai_api_key, args.replicate_api_key, args.inf_type, args.doctor_bias, args.patient_bias, args.doctor_llm, args.patient_llm, args.measurement_llm, args.moderator_llm, args.num_scenarios, args.agent_dataset, args.doctor_image_request, args.total_inferences, args.anthropic_api_key, args.log_file)
