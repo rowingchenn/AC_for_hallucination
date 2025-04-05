@@ -673,7 +673,10 @@ def main(api_key, replicate_api_key, inf_type, doctor_bias, patient_bias, doctor
             else: imgs = False
             # Check if final inference
             if _inf_id == total_inferences - 1:
-                pi_dialogue += "This is the final question. Please provide a diagnosis.\n"
+                pi_dialogue += (
+                    "This is the final question. Please provide a diagnosis.\n"
+                    "Respond strictly in the format: DIAGNOSIS READY: [your final diagnosis here].\n"
+                )
             # Obtain doctor dialogue (human or llm agent)
             if inf_type == "human_doctor":
                 doctor_dialogue = input("\nQuestion for patient: ")
@@ -786,5 +789,6 @@ if __name__ == "__main__":
     parser.add_argument('--anthropic_api_key', type=str, default=None, required=False, help='Anthropic API key for Claude 3.5 Sonnet')
     
     args = parser.parse_args()
+    print(args.total_inferences)
 
     main(args.openai_api_key, args.replicate_api_key, args.inf_type, args.doctor_bias, args.patient_bias, args.doctor_llm, args.patient_llm, args.measurement_llm, args.moderator_llm, args.num_scenarios, args.agent_dataset, args.doctor_image_request, args.total_inferences, args.anthropic_api_key, args.log_file)
